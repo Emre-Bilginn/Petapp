@@ -1,50 +1,128 @@
-# Welcome to your Expo app 👋
+# 🐾 PetApp
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+PetApp, **React Native + Expo** ile geliştirilmiş; evcil hayvan sahiplerinin günlük ihtiyaçlarını, sağlık kontrollerini ve bakım süreçlerini tek yerden yönetmesini amaçlayan bir mobil uygulamadır.
 
-## Get started
+---
 
-1. Install dependencies
+## 🚀 Özellikler
 
+- 🔑 **Kullanıcı Giriş & Kayıt**
+  - Firebase Authentication ile e-posta/şifre girişi
+  - Kullanıcı ve veteriner rollerine uygun akışlar
+- 👤 **Profil Yönetimi**
+  - Kullanıcı bilgileri (isim, e-posta, fotoğraf)
+  - Birden fazla evcil hayvan profili ekleme/çıkarma
+- 💉 **Aşı Takvimi**
+  - Aşı geçmişi ve yaklaşan aşılar
+  - Bildirim/hatırlatma sistemi
+- 🍖 **Beslenme Önerileri**
+  - Tür ve yaşa göre planlar
+- 🧬 **Makine Öğrenmesi ile Hastalık Tahmini**
+  - Fotoğraftan olası hastalık sınıflandırması
+  - Mobil için **TorchScript** model entegrasyonu
+- 🗺️ **Veteriner Bulma**
+  - Google Maps/Places ile yakın veterinerler
+  - Yol tarifi ve iletişim bilgileri
+- 📅 **Randevu Sistemi**
+  - Uygun saatleri görüntüleme ve randevu oluşturma
+- 📸 **Kayıp Hayvan İlanları**
+  - Fotoğraf + konum ile ilan paylaşımı
+- 🐕 **Sokak Hayvanı Bildirimi**
+  - Konum bazlı paylaşım
+- 📈 **Gelişim Takibi**
+  - Boy, kilo, yaş kayıtları ve zaman serisi
+- 💬 **Topluluk Sohbeti**
+  - 1-1 veya grup sohbetleri
+- ❤️ **Bağış & Sahiplendirme**
+  - Bağış paylaşımı ve sahiplendirme ilanları
+
+---
+
+## 📦 Kurulum
+
+> Gereksinimler: Node.js (LTS), Git, Expo CLI (opsiyonel), Android Studio/iOS Xcode (emülatör/simülatör için)
+
+1. Depoyu klonla ve bağımlılıkları yükle:
    ```bash
+   git clone <SENIN_REPO_URLIN>
+   cd PetApp
    npm install
    ```
 
-2. Start the app
+2. Ortam değişkenlerini ayarla (örnek `.env`):
+   ```bash
+   EXPO_PUBLIC_API_KEY=YOUR_API_KEY
+   EXPO_PUBLIC_AUTH_DOMAIN=YOUR_AUTH_DOMAIN
+   EXPO_PUBLIC_PROJECT_ID=YOUR_PROJECT_ID
+   EXPO_PUBLIC_STORAGE_BUCKET=YOUR_STORAGE_BUCKET
+   EXPO_PUBLIC_MESSAGING_SENDER_ID=YOUR_SENDER_ID
+   EXPO_PUBLIC_APP_ID=YOUR_APP_ID
+   EXPO_PUBLIC_GOOGLE_API_KEY=YOUR_GOOGLE_API_KEY
+   ```
 
+3. Uygulamayı başlat:
    ```bash
    npx expo start
    ```
 
-In the output, you'll find options to open the app in a
+4. Çalıştırma seçenekleri:
+   - 📱 Expo Go uygulamasıyla QR kodu okut
+   - 🤖 Android emülatöründe aç
+   - 🍏 iOS simülatöründe çalıştır
+   - 🌍 Web tarayıcıda test et
 
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
+---
 
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
+## 🛠️ Kullanılan Teknolojiler
 
-## Get a fresh project
+- **React Native & Expo** — mobil uygulama çatısı
+- **Firebase Authentication / Firestore / Storage** — kimlik, veri ve medya yönetimi
+- **Google Maps Platform (Maps, Places, Directions)** — harita ve yer servisleri
+- **Python & PyTorch (TorchScript)** — ML modeli eğitimi ve mobilde çalıştırma
+- **Scikit-learn** — eğitim/test yardımcıları
+- **Redux** — global state yönetimi
 
-When you're ready, run:
+---
+
+## 📂 Proje Yapısı
 
 ```bash
-npm run reset-project
+src/
+ ├─ components/       # Ortak bileşenler
+ ├─ navigation/       # Navigasyon
+ ├─ redux/            # Global state yönetimi
+ └─ screens/          # Ekranlar
+
+assets/               # Görseller, ikonlar
+.env                  # Ortam değişkenleri
+App.js                # Giriş noktası
+firebaseConfig.js     # Firebase ayarları
+package.json          # Proje bağımlılıkları
+.gitignore            # GitHub'a dahil edilmeyecekler
+README.md             # Proje açıklaması
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+---
 
-## Learn more
+## 🔒 Güvenlik Notları
 
-To learn more about developing your project with Expo, look at the following resources:
+- API anahtarlarını **koda gömme**; `.env` / Expo config kullan.
+- Depoya `node_modules`, `.expo`, `dist`, `*.keystore`, `*.p12` gibi dosyaları **yükleme**.
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+---
 
-## Join the community
+## 📬 İletişim
 
-Join our community of developers creating universal apps.
+👤 **Geliştirici:** Emre Bilgin  
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+- GitHub: [@Emre-Bilginn](https://github.com/Emre-Bilginn)  
+- LinkedIn: [linkedin.com/in/emrebilgin](https://www.linkedin.com/in/emre-bilgin-506143222)  
+- E-posta: emrebilgin2003@gmail.com 
+
+Projeyle ilgili sorularınız veya katkı önerileriniz için e-posta yoluyla bana ulaşabilirsiniz.
+
+---
+
+## 📄 Lisans
+
+Bu proje **kişisel portföy ve öğrenme amaçlıdır**. Herhangi bir açık lisans eklenmemiştir.
