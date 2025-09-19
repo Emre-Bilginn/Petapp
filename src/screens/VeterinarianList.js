@@ -1,3 +1,4 @@
+// src/screens/VeterinarianList.js
 import { useNavigation } from '@react-navigation/native';
 import axios from 'axios';
 import * as Location from 'expo-location';
@@ -6,7 +7,8 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, FlatList, StyleSheet, Text, TouchableOpacity, View } from 'react-native';
 import { db } from '../../firebaseConfig';
 
-const EXPO_PUBLIC_GOOGLE_API_KEY = 'AIzaSyAsuQNzCQQ_czN9HSpNjqPBv-wAXoeP-W0';
+// .env'den oku (Expo'da EXPO_PUBLIC_* değişkenleri process.env ile gelir)
+const GOOGLE_API_KEY = process.env.EXPO_PUBLIC_GOOGLE_API_KEY;
 
 const VeterinarianList = () => {
   const [veterinarians, setVeterinarians] = useState([]);
@@ -31,31 +33,41 @@ const VeterinarianList = () => {
 
   const fetchVeterinarians = async (lat, lon) => {
     try {
-      // Google Places API'den veterinerleri çek
-      const response = await axios.get(
-        `https://maps.googleapis.com/maps/api/place/nearbysearch/json?location=${lat},${lon}&radius=5000&type=veterinary_care&key=${EXPO_PUBLIC_GOOGLE_API_KEY}`
-      );
+      if (!GOOGLE_API_KEY) {
+        throw new Error('Google API anahtarı bulunamadı. EXPO_PUBLIC_GOOGLE_API_KEY env değerini kontrol et.');
+      }
 
-      if (response.data.results.length > 0) {
-        const fetchedVets = response.data.results.map(vet => ({
+      // Google Places API'den veterinerleri çek
+      const url =
+        `https://maps.googleapis.com/maps/api/place/nearbysearch/json?` +
+        `location=${lat},${lon}&radius=5000&type=veterinary_care&key=${GOOGLE_API_KEY}`;
+
+      const response = await axios.get(url);
+
+      if (response.data?.results?.length > 0) {
+        const fetchedVets = response.data.results.map((vet) => ({
           id: vet.place_id,
           name: vet.name || 'Bilinmiyor',
           location: vet.vicinity || 'Adres bilgisi yok',
-          rating: vet.rating || 'Puan yok',
-          openNow: vet.opening_hours?.open_now ? 'Açık' : 'Kapalı',
+          rating: vet.rating ?? 'Puan yok',
+          openNow:
+            vet.opening_hours?.open_now === true
+              ? 'Açık'
+              : vet.opening_hours?.open_now === false
+              ? 'Kapalı'
+              : 'Bilinmiyor',
         }));
 
         // Firestore'daki Vets koleksiyonunu da çek
         const vetsSnapshot = await getDocs(collection(db, 'Vets'));
-        const firestoreVets = vetsSnapshot.docs.map(doc => doc.data());
+        const firestoreVets = vetsSnapshot.docs.map((doc) => doc.data());
 
-        // Her vet için firestore'dan eşleşme ara (name ile)
-        const combinedVets = fetchedVets.map(vet => {
-          const matchedVet = firestoreVets.find(fv => fv.vetName.toLowerCase() === vet.name.toLowerCase());
-          return {
-            ...vet,
-            uid: matchedVet ? matchedVet.uid : 'noaccount'  // Eğer varsa firestore'daki UID atanır, yoksa noaccount
-          };
+        // İsim eşleşmesiyle UID iliştir
+        const combinedVets = fetchedVets.map((vet) => {
+          const matched = firestoreVets.find(
+            (fv) => fv?.vetName?.toLowerCase?.() === vet.name.toLowerCase()
+          );
+          return { ...vet, uid: matched?.uid ?? 'noaccount' };
         });
 
         setVeterinarians(combinedVets);
@@ -63,7 +75,7 @@ const VeterinarianList = () => {
         setErrorMsg('Yakınlarda veteriner bulunamadı.');
       }
     } catch (error) {
-      console.error('Veterinerler yüklenirken hata oluştu:', error);
+      console.error('Veterinerler yüklenirken hata:', error?.message || error);
       setErrorMsg('Veriler alınırken hata oluştu.');
     } finally {
       setLoading(false);
@@ -86,10 +98,7 @@ const VeterinarianList = () => {
             <TouchableOpacity
               onPress={() =>
                 navigation.navigate('VetAppointment', {
-                  vet: {
-                    name: item.name,
-                    uid: item.uid
-                  }
+                  vet: { name: item.name, uid: item.uid },
                 })
               }
               style={styles.card}
@@ -119,7 +128,7 @@ const styles = StyleSheet.create({
     shadowOpacity: 0.1,
     shadowRadius: 5,
   },
-  name: { fontSize: 18, fontWeight: 'bold' }
+  name: { fontSize: 18, fontWeight: 'bold' },
 });
 
 export default VeterinarianList;
