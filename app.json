@@ -8,7 +8,6 @@
     "scheme": "petapp",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
-
     "plugins": [
       [
         "expo-splash-screen",
@@ -17,12 +16,15 @@
           "imageWidth": 200,
           "resizeMode": "contain",
           "backgroundColor": "#ffffff",
-          "dark": { "backgroundColor": "#000000" }
+          "dark": {
+            "backgroundColor": "#000000"
+          }
         }
       ],
-      "expo-location"
+      "expo-location",
+      "expo-font",
+      "expo-web-browser"
     ],
-
     "ios": {
       "supportsTablet": true,
       "infoPlist": {
@@ -30,7 +32,6 @@
         "NSPhotoLibraryUsageDescription": "Profil fotoğrafını güncellemek için fotoğraf kütüphanesine erişmemiz gerekiyor."
       }
     },
-
     "android": {
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
@@ -43,19 +44,26 @@
       "permissions": [
         "ACCESS_FINE_LOCATION",
         "ACCESS_COARSE_LOCATION",
-        "READ_MEDIA_IMAGES"         // Android 13+ için galeri
+        "READ_MEDIA_IMAGES",
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
       ],
       "config": {
         "googleMaps": {
           "apiKey": "${EXPO_PUBLIC_GOOGLE_API_KEY}"
         }
-      }
+      },
+      "package": "com.emrebilgin.petapp"
     },
-
     "web": {
       "bundler": "metro",
       "output": "single",
       "favicon": "./assets/images/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "65b0ebb7-02c4-4805-93c3-157cce47236c"
+      }
     }
   }
 }
