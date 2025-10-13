@@ -1,16 +1,38 @@
-import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { AccountSettingsScreen, AddLostPetScreen, AppointmentScreen, AsiPage, Beslenme, DonationPage, Guess, HomePage, LostPetsList, MainPage, MapScreen, PasswordResetScreen, PetDetails, PetGrowthTracker, ProfilePage, StreetAnimalsMap, UserAppointments, VetAppointment, VetDashboard, VeterinarianList, } from '../screens/Index';
+﻿import { createNativeStackNavigator } from '@react-navigation/native-stack';
+import {
+  AccountSettingsScreen,
+  AddLostPetScreen,
+  AppointmentScreen,
+  AsiPage,
+  Beslenme,
+  DonationPage,
+  Guess,
+  HomePage,
+  LostPetsList,
+  MainPage,
+  MapScreen,
+  PasswordResetScreen,
+  PetDetails,
+  PetGrowthTracker,
+  ProfilePage,
+  StreetAnimalsMap,
+  UserAppointments,
+  VetAppointment,
+  VetDashboard,
+  VeterinarianList,
+  ChatPage,
+} from '../screens/Index';
 
 const Stack = createNativeStackNavigator();
 
 const UserStack = () => {
   return (
-    <Stack.Navigator 
-      initialRouteName='Home'
+    <Stack.Navigator
+      initialRouteName="Home"
       screenOptions={{ headerShown: false }}
     >
-      <Stack.Screen name='Home' component={HomePage} />
-      <Stack.Screen name='Profile' component={ProfilePage} />
+      <Stack.Screen name="Home" component={HomePage} />
+      <Stack.Screen name="Profile" component={ProfilePage} />
       <Stack.Screen name="Map" component={MapScreen} />
       <Stack.Screen name="Asi" component={AsiPage} />
       <Stack.Screen name="Appointments" component={UserAppointments} />
@@ -28,9 +50,8 @@ const UserStack = () => {
       <Stack.Screen name="VetDashboard" component={VetDashboard} />
       <Stack.Screen name="MainPage" component={MainPage} />
       <Stack.Screen name="DonationPage" component={DonationPage} />
-      <Stack.Screen name='Guess' component={Guess} />
-
-
+      <Stack.Screen name="Guess" component={Guess} />
+      <Stack.Screen name="ChatRoom" component={ChatPage} />
     </Stack.Navigator>
   );
 };

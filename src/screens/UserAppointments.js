@@ -1,72 +1,166 @@
-import React, { useState, useEffect } from 'react';
-import { StyleSheet, Text, View, FlatList, TouchableOpacity } from 'react-native';
-import { collection, query, where, getDocs, orderBy } from 'firebase/firestore';
-import { db } from '../../firebaseConfig';
+﻿import React, { useEffect, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
+} from 'react-native';
+import { collection, getDocs, orderBy, query, where } from 'firebase/firestore';
 import { getAuth } from 'firebase/auth';
 import Ionicons from 'react-native-vector-icons/Ionicons';
+import { db } from '../../firebaseConfig';
+import { prepareDirectChatParams } from './ChatService';
 
 const UserAppointments = ({ navigation }) => {
+  const auth = getAuth();
   const [pastAppointments, setPastAppointments] = useState([]);
   const [upcomingAppointments, setUpcomingAppointments] = useState([]);
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
     const fetchAppointments = async () => {
-      const user = getAuth().currentUser;
-      if (!user) return;
+      const user = auth.currentUser;
+      if (!user) {
+        return;
+      }
 
       try {
-        const vaccinationRef = collection(db, 'VaccinationSchedules');
-        const q = query(vaccinationRef, where('userId', '==', user.uid), orderBy('date'));
-        const querySnapshot = await getDocs(q);
-
         const currentDate = new Date();
         const past = [];
         const upcoming = [];
 
-        querySnapshot.forEach((doc) => {
-          const data = doc.data();
-          const appointmentDate = data.date.toDate(); // Firestore Timestamp to JS Date
-          if (appointmentDate < currentDate) {
-            past.push({ id: doc.id, ...data });
+        const mapSnapshot = (docSnap, kind) => {
+          const data = docSnap.data();
+          const rawDate = data.appointmentDate || data.date;
+          const appointmentDate = rawDate?.toDate?.() || new Date(rawDate);
+          if (!appointmentDate || Number.isNaN(appointmentDate.getTime())) {
+            return null;
+          }
+          return {
+            id: docSnap.id,
+            ...data,
+            appointmentDate,
+            kind,
+          };
+        };
+
+        const vaccinationRef = collection(db, 'VaccinationSchedules');
+        const vaccinationQuery = query(
+          vaccinationRef,
+          where('userId', '==', user.uid),
+          orderBy('date'),
+        );
+        const vaccinationSnapshot = await getDocs(vaccinationQuery);
+        vaccinationSnapshot.forEach((docSnap) => {
+          const normalized = mapSnapshot(docSnap, 'vaccination');
+          if (!normalized) {
+            return;
+          }
+          if (normalized.appointmentDate < currentDate) {
+            past.push(normalized);
           } else {
-            upcoming.push({ id: doc.id, ...data });
+            upcoming.push(normalized);
           }
         });
 
+        const vetAppointmentRef = collection(db, 'appointments');
+        const vetQuery = query(vetAppointmentRef, where('userId', '==', user.uid));
+        const vetSnapshot = await getDocs(vetQuery);
+        vetSnapshot.forEach((docSnap) => {
+          const normalized = mapSnapshot(docSnap, 'vet');
+          if (!normalized) {
+            return;
+          }
+          if (normalized.appointmentDate < currentDate) {
+            past.push(normalized);
+          } else {
+            upcoming.push(normalized);
+          }
+        });
+
+        past.sort((a, b) => b.appointmentDate - a.appointmentDate);
+        upcoming.sort((a, b) => a.appointmentDate - b.appointmentDate);
+
         setPastAppointments(past);
         setUpcomingAppointments(upcoming);
-        setLoading(false);
       } catch (error) {
-        console.error("Randevuları alırken hata oluştu: ", error);
+        console.error('Randevular alnrken hata olutu:', error);
+        Alert.alert('Hata', 'Randevular yÃ¼klenemedi. LÃ¼tfen daha sonra tekrar deneyin.');
+      } finally {
         setLoading(false);
       }
     };
 
     fetchAppointments();
-  }, []);
+  }, [auth]);
 
-  const renderAppointment = ({ item }) => (
-    <View style={styles.appointmentCard}>
-      <Text style={styles.petName}>Evcil Hayvan: {item.petName}</Text>
-      <Text style={styles.vaccineName}>Aşı: {item.vaccineName}</Text>
-      <Text style={styles.date}>
-        Tarih: {item.date.toDate().toLocaleString('tr-TR', {
-          year: 'numeric',
-          month: 'long',
-          day: 'numeric',
-          hour: '2-digit',
-          minute: '2-digit',
-          hour12: false,
-        })}
-      </Text>
-    </View>
-  );
+  const handleMessagePress = async (appointment) => {
+    const user = auth.currentUser;
+    if (!user) {
+      Alert.alert('Sohbet', 'Mesajlamak iÃ§in giri yapmalsnz.');
+      return;
+    }
+
+    const vetIdCandidate = appointment.clinicId || appointment.vetId;
+    const vetId = vetIdCandidate && vetIdCandidate !== 'noaccount' ? vetIdCandidate : null;
+
+    if (!vetId) {
+      Alert.alert('Sohbet', 'Bu randevunun bal olduu veteriner hesab bulunamad.');
+      return;
+    }
+
+    try {
+      const params = await prepareDirectChatParams({
+        currentUserId: user.uid,
+        targetUserId: vetId,
+        currentUserFallbackName: user.displayName || user.email || 'Siz',
+        targetUserFallbackName: appointment.clinicName || 'Veteriner',
+      });
+      navigation.navigate('ChatRoom', params);
+    } catch (error) {
+      console.error('Direct message navigation failed:', error);
+      Alert.alert('Sohbet', 'Mesaj ekran aÃ§lrken bir sorun olutu.');
+    }
+  };
+
+  const renderAppointment = ({ item }) => {
+    const hasDirectMessage = (item.clinicId && item.clinicId !== 'noaccount') || (item.vetId && item.vetId !== 'noaccount');
+
+    return (
+      <View style={styles.appointmentCard}>
+        <Text style={styles.petName}>Evcil Hayvan: {item.petName}</Text>
+        <Text style={styles.vaccineName}>A: {item.vaccineName}</Text>
+        <Text style={styles.date}>
+          Tarih:{' '}
+          {item.appointmentDate.toLocaleString('tr-TR', {
+            year: 'numeric',
+            month: 'long',
+            day: 'numeric',
+            hour: '2-digit',
+            minute: '2-digit',
+            hour12: false,
+          })}
+        </Text>
+        {hasDirectMessage ? (
+          <TouchableOpacity
+            style={styles.messageButton}
+            onPress={() => handleMessagePress(item)}
+            activeOpacity={0.75}
+          >
+            <Ionicons name="chatbubble-ellipses" size={16} color="#ffffff" />
+            <Text style={styles.messageButtonText}>Mesaj GÃ¶nder</Text>
+          </TouchableOpacity>
+        ) : null}
+      </View>
+    );
+  };
 
   if (loading) {
     return (
       <View style={styles.loadingContainer}>
-        <Text>Randevular yükleniyor...</Text>
+        <Text>Randevular yÃ¼kleniyor...</Text>
       </View>
     );
   }
@@ -77,10 +171,10 @@ const UserAppointments = ({ navigation }) => {
         <TouchableOpacity onPress={() => navigation.goBack()} style={styles.iconButton}>
           <Ionicons name="arrow-back" size={24} color="#ff8c00" />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>Randevularım</Text>
+        <Text style={styles.headerTitle}>Randevularm</Text>
       </View>
 
-      <Text style={styles.sectionTitle}>Yaklaşan Randevular</Text>
+      <Text style={styles.sectionTitle}>Yaklaan Randevular</Text>
       {upcomingAppointments.length > 0 ? (
         <FlatList
           data={upcomingAppointments}
@@ -88,10 +182,10 @@ const UserAppointments = ({ navigation }) => {
           renderItem={renderAppointment}
         />
       ) : (
-        <Text style={styles.noAppointments}>Yaklaşan randevunuz yok.</Text>
+        <Text style={styles.noAppointments}>Yaklaan randevunuz yok.</Text>
       )}
 
-      <Text style={styles.sectionTitle}>Geçmiş Randevular</Text>
+      <Text style={styles.sectionTitle}>GeÃ§mi Randevular</Text>
       {pastAppointments.length > 0 ? (
         <FlatList
           data={pastAppointments}
@@ -99,7 +193,7 @@ const UserAppointments = ({ navigation }) => {
           renderItem={renderAppointment}
         />
       ) : (
-        <Text style={styles.noAppointments}>Geçmiş randevunuz yok.</Text>
+        <Text style={styles.noAppointments}>GeÃ§mi randevunuz yok.</Text>
       )}
     </View>
   );
@@ -143,13 +237,14 @@ const styles = StyleSheet.create({
   appointmentCard: {
     backgroundColor: '#f9f9f9',
     padding: 16,
-    borderRadius: 8,
+    borderRadius: 12,
     marginVertical: 8,
     marginHorizontal: 16,
+    gap: 8,
   },
   petName: {
     fontSize: 16,
-    fontWeight: 'bold',
+    fontWeight: '700',
   },
   vaccineName: {
     fontSize: 14,
@@ -157,7 +252,23 @@ const styles = StyleSheet.create({
   },
   date: {
     fontSize: 14,
-    color: '#888',
+    color: '#555',
+  },
+  messageButton: {
+    marginTop: 6,
+    alignSelf: 'flex-start',
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 6,
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: '#0eb37d',
+  },
+  messageButtonText: {
+    color: '#ffffff',
+    fontSize: 13,
+    fontWeight: '600',
   },
   noAppointments: {
     fontSize: 16,
@@ -173,3 +284,5 @@ const styles = StyleSheet.create({
 });
 
 export default UserAppointments;
+
+

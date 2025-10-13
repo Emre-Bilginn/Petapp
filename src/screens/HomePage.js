@@ -1,65 +1,101 @@
-import * as React from 'react';
-import { Text, View } from 'react-native';
+﻿import React from 'react';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import Icon from 'react-native-vector-icons/Ionicons'; // İkon paketi
+import Icon from 'react-native-vector-icons/Ionicons';
 
-// Home Screen
 import MainPage from './MainPage';
-
-// Settings Screen
 import SettingsPage from './SettingsPage';
-
-// Profile Screen
 import ProfilePage from './ProfilePage';
+import ChatLobby from './ChatLobby';
 
-// Discover Screen
-import ChatPage from './ChatPage';
-
-// Bottom Tab Navigator
 const Tab = createBottomTabNavigator();
+
+const ICONS = {
+  Main: { active: 'home', inactive: 'home-outline', label: 'Ana Sayfa' },
+  Settings: { active: 'settings', inactive: 'settings-outline', label: 'Ayarlar' },
+  Chat: { active: 'chatbubbles', inactive: 'chatbubbles-outline', label: 'Sohbet' },
+  Profile: { active: 'person', inactive: 'person-outline', label: 'Profil' },
+};
+
+const HEADER_STYLE = {
+  backgroundColor: '#f6f9fc',
+  borderBottomWidth: 0,
+  elevation: 0,
+  shadowOpacity: 0,
+};
+
+const HEADER_TITLE_STYLE = {
+  fontWeight: '700',
+  color: '#041523',
+  fontSize: 18,
+};
 
 export default function HomePage() {
   return (
     <Tab.Navigator
-      screenOptions={({ route }) => ({
-        tabBarIcon: ({ focused, color, size }) => {
-          let iconName;
-
-          // İkonları route.name'e göre atama
-          if (route.name === 'Main') {
-            iconName = focused ? 'home' : 'home-outline';
-          } else if (route.name === 'Settings') {
-            iconName = focused ? 'settings' : 'settings-outline';
-          } else if (route.name === 'Profile') {
-            iconName = focused ? 'person' : 'person-outline';
-          } else if (route.name === 'Chat') {
-            iconName = focused ? 'chatbubbles' : 'chatbubbles-outline'; 
-          
-          }
-
-          // İkonu geri döndürme
-          return <Icon name={iconName} size={size} color={color} />;
-        },
-        tabBarActiveTintColor: 'tomato',
-        tabBarInactiveTintColor: 'gray',
-        tabBarStyle: { backgroundColor: '#f8f8f8', paddingBottom: 5, height: 60 },
-        tabBarLabelStyle: { fontSize: 12 },
-      })}
+      screenOptions={({ route }) => {
+        const iconConfig = ICONS[route.name];
+        return {
+          tabBarIcon: ({ focused, color, size }) => (
+            <Icon name={focused ? iconConfig.active : iconConfig.inactive} size={size} color={color} />
+          ),
+          tabBarLabel: iconConfig.label,
+          tabBarActiveTintColor: '#0eb37d',
+          tabBarInactiveTintColor: 'rgba(6, 24, 40, 0.45)',
+          tabBarStyle: {
+            backgroundColor: '#ffffff',
+            height: 70,
+            paddingBottom: 12,
+            paddingTop: 8,
+            borderTopWidth: 0,
+            elevation: 8,
+            shadowColor: '#041523',
+            shadowOffset: { width: 0, height: -2 },
+            shadowOpacity: 0.08,
+            shadowRadius: 12,
+          },
+          tabBarItemStyle: {
+            paddingVertical: 4,
+          },
+          tabBarLabelStyle: {
+            fontSize: 12,
+            fontWeight: '600',
+          },
+          headerStyle: HEADER_STYLE,
+          headerTitleStyle: HEADER_TITLE_STYLE,
+          headerShadowVisible: false,
+          tabBarHideOnKeyboard: true,
+        };
+      }}
     >
-      <Tab.Screen name="Main" component={MainPage}
-      options={{
-        headerShown: false, // Header'ı tamamen kaldırır
-      }} />
-      <Tab.Screen name="Settings" component={SettingsPage}
-      options={{
-        headerShown: false, // Header'ı tamamen kaldırır
-      }} />
-      <Tab.Screen 
-        name="Chat" 
-        component={ChatPage} 
-        initialParams={{ chatId: 'someChatId', userId: 'someUserId' }} 
+      <Tab.Screen
+        name="Main"
+        component={MainPage}
+        options={{ headerShown: false }}
       />
-      <Tab.Screen name="Profile" component={ProfilePage} />
+      <Tab.Screen
+        name="Settings"
+        component={SettingsPage}
+        options={{
+          headerTitle: 'Ayarlar',
+        }}
+      />
+      <Tab.Screen
+        name="Chat"
+        component={ChatLobby}
+        options={{ headerShown: false }}
+      />
+      <Tab.Screen
+        name="Profile"
+        component={ProfilePage}
+        options={{
+          headerTitle: 'Profil',
+        }}
+      />
     </Tab.Navigator>
-  );
+  );
 }
+
+
+
+
+

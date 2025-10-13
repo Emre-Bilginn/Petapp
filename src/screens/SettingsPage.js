@@ -1,371 +1,378 @@
-import React, { useState} from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useCallback, useMemo, useState } from 'react';
 import {
   StyleSheet,
-  SafeAreaView,
   ScrollView,
   View,
   Text,
   TouchableOpacity,
   Switch,
   Image,
+  Alert,
 } from 'react-native';
 import FeatherIcon from 'react-native-vector-icons/Feather';
-import {logOut} from '../redux/UserSlice';
-import { useDispatch } from 'react-redux';
-import { useNavigation } from '@react-navigation/native';
-
+import { useDispatch, useSelector } from 'react-redux';
+import { useFocusEffect, useNavigation } from '@react-navigation/native';
+import { logOut } from '../redux/UserSlice';
+import { getAuth } from 'firebase/auth';
+import { doc, getDoc, getFirestore } from 'firebase/firestore';
 
 const SettingsPage = () => {
   const navigation = useNavigation();
+  const dispatch = useDispatch();
+  const auth = getAuth();
+  const db = getFirestore();
+  const reduxUser = useSelector((state) => state.user?.user);
 
-    const dispatch = useDispatch();
+  const [profileInfo, setProfileInfo] = useState(() => ({
+    name: reduxUser?.displayName || 'Patisever',
+    email: reduxUser?.email || 'hesabim@patipartner.app',
+    photoURL: reduxUser?.photoURL || null,
+  }));
 
-    const handleLogOut = () => {
-        dispatch(logOut())
-        .then(() => {
-          // Log out işlemi başarılı
-        })
-        .catch((error) => {
-          console.error("Log out hatası: ", error);
-        });;
+  useFocusEffect(
+    useCallback(() => {
+      const loadProfile = async () => {
+        const current = auth.currentUser;
+        if (!current) {
+          setProfileInfo({
+            name: 'Patisever',
+            email: 'hesabim@patipartner.app',
+            photoURL: null,
+          });
+          return;
+        }
+        try {
+          const snap = await getDoc(doc(db, 'Users', current.uid));
+          const data = snap.exists() ? snap.data() : {};
+          setProfileInfo({
+            name: data.name || current.displayName || reduxUser?.displayName || 'Patisever',
+            email: data.email || current.email || reduxUser?.email || 'hesabim@patipartner.app',
+            photoURL: data.photoURL || current.photoURL || reduxUser?.photoURL || null,
+          });
+        } catch (error) {
+          console.warn('Settings profile load failed:', error);
+        }
+      };
+      loadProfile();
+    }, [auth, db, reduxUser?.displayName, reduxUser?.email, reduxUser?.photoURL])
+  );
+
+
+  const [preferences, setPreferences] = useState({
+    emailNotifications: true,
+    pushNotifications: false,
+    darkMode: false,
+  });
+
+  const displayInfo = useMemo(() => {
+    const name = profileInfo.name || 'Patisever';
+    const email = profileInfo.email || 'hesabim@patipartner.app';
+
+    return {
+      name,
+      email,
+      initial: name.charAt(0).toUpperCase(),
+      photoURL: profileInfo.photoURL || null,
     };
-    const [form, setForm] = useState({
-      emailfications: true,
-      pushfications: false,
-    });
+  }, [profileInfo]);
+
+  const handleToggle = (key) => (value) => {
+    setPreferences((prev) => ({ ...prev, [key]: value }));
+  };
+
+  const showComingSoon = (title) => {
+    Alert.alert(title, 'Bu bölüm üzerinde çalışıyoruz. Çok yakında aktif olacak.');
+  };
+
+  const handleLogOut = () => {
+    Alert.alert('Çıkış yap', 'Hesabından çıkmak istediğine emin misin?', [
+      {
+        text: 'Vazgeç',
+        style: 'cancel',
+      },
+      {
+        text: 'Çıkış Yap',
+        style: 'destructive',
+        onPress: async () => {
+          try {
+            await dispatch(logOut()).unwrap();
+            navigation.reset({ index: 0, routes: [{ name: 'Login' }] });
+          } catch (error) {
+            console.error('Log out hatası:', error);
+            Alert.alert('Bir şeyler ters gitti', 'Lütfen daha sonra tekrar dene.');
+          }
+        },
+      },
+    ]);
+  };
+
+  const renderRow = ({ label, value, onPress, rightElement, isLast }) => (
+    <TouchableOpacity
+      activeOpacity={onPress ? 0.7 : 1}
+      onPress={onPress}
+      style={[styles.rowWrapper, isLast && styles.rowLast]}
+    >
+      <View style={styles.rowContent}>
+        <Text style={styles.rowLabel}>{label}</Text>
+        <View style={styles.rowSpacer} />
+        {value ? <Text style={styles.rowValue}>{value}</Text> : null}
+        {rightElement}
+        {onPress && !rightElement ? (
+          <FeatherIcon color="#a4acb8" name="chevron-right" size={20} />
+        ) : null}
+      </View>
+    </TouchableOpacity>
+  );
 
   return (
-    <SafeAreaView style={{ flex: 1, backgroundColor: '#f8f8f8' }}>
-      <View style={styles.header}>
-        <View style={styles.headerAction}>
+    <SafeAreaView style={styles.safeArea}>
+      <ScrollView contentContainerStyle={styles.content} showsVerticalScrollIndicator={false}>
+        <View style={styles.profileCard}>
+          <View style={styles.avatarFrame}>
+            {displayInfo.photoURL ? (
+              <Image source={{ uri: displayInfo.photoURL }} style={styles.profileAvatar} />
+            ) : (
+              <Text style={styles.avatarInitial}>{displayInfo.initial}</Text>
+            )}
+          </View>
+          <View style={styles.profileTextContainer}>
+            <Text style={styles.profileName}>{displayInfo.name}</Text>
+            <Text style={styles.profileEmail}>{displayInfo.email}</Text>
+          </View>
           <TouchableOpacity
-              onPress={() => navigation.navigate('Home', { screen: 'Main' })}
-           >
-            <FeatherIcon
-              color="#000"
-              name="arrow-left"
-              size={24} />
+            style={styles.editButton}
+            onPress={() => navigation.navigate('Profile')}
+          >
+            <FeatherIcon name="edit-2" size={16} color="#0b6aa2" />
+            <Text style={styles.editButtonText}>Profili Düzenle</Text>
           </TouchableOpacity>
         </View>
-        <Text numberOfLines={1} style={styles.headerTitle}>
-          Settings
-        </Text>
-        <View style={[styles.headerAction, { alignItems: 'flex-end' }]}>
-          <TouchableOpacity
-            onPress={() => {
-              // handle onPress
-            }}>
-            <FeatherIcon
-              color="#000"
-              name="more-vertical"
-              size={24} />
-          </TouchableOpacity>
-        </View>
-      </View>
-      <ScrollView contentContainerStyle={styles.content}>
-        <View style={[styles.section, { paddingTop: 4 }]}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <View style={styles.sectionBody}>
-          <TouchableOpacity
-            onPress={() => {
-              navigation.navigate('Profile'); // Profil sayfasına yönlendirme
-            }}
-            style={styles.profile}>
-            <Image
-              alt=""
-              source={require("../../assets/images/man.png")}
-              style={styles.profileAvatar} />
-            <View style={styles.profileBody}>
-              <Text style={styles.profileName}>Emre Bilgin</Text>
-              <Text style={styles.profileHandle}>emrebilgin2003@gmail.com</Text>
-            </View>
-            <FeatherIcon
-              color="#bcbcbc"
-              name="chevron-right"
-              size={22} />
-          </TouchableOpacity>
 
-          </View>
-        </View>
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-          <View style={styles.sectionBody}>
-            <View style={[styles.rowWrapper, styles.rowFirst]}>
-              <TouchableOpacity
-                onPress={() => {
-                  // handle onPress
-                }}
-                style={styles.row}>
-                <Text style={styles.rowLabel}>Language</Text>
-                <View style={styles.rowSpacer} />
-                <Text style={styles.rowValue}>English</Text>
-                <FeatherIcon
-                  color="#bcbcbc"
-                  name="chevron-right"
-                  size={19} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.rowWrapper}>
-              <TouchableOpacity
-                onPress={() => {
-                  // handle onPress
-                }}
-                style={styles.row}>
-                <Text style={styles.rowLabel}>Location</Text>
-                <View style={styles.rowSpacer} />
-                <Text style={styles.rowValue}>Los Angeles, CA</Text>
-                <FeatherIcon
-                  color="#bcbcbc"
-                  name="chevron-right"
-                  size={19} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.rowWrapper}>
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Email fications</Text>
-                <View style={styles.rowSpacer} />
+          <Text style={styles.sectionTitle}>Tercihler</Text>
+          <View style={styles.card}>
+            {renderRow({
+              label: 'Dil',
+              value: 'Türkçe (TR)',
+              onPress: () => showComingSoon('Dil ayarları'),
+            })}
+            {renderRow({
+              label: 'Konum',
+              value: 'İzmir, Türkiye',
+              onPress: () => showComingSoon('Konum ayarları'),
+            })}
+            {renderRow({
+              label: 'E-posta bildirimleri',
+              rightElement: (
                 <Switch
-                  onValueChange={emailfications =>
-                    setForm({ ...form, emailfications })
-                  }
-                  style={{ transform: [{ scaleX: 0.95 }, { scaleY: 0.95 }] }}
-                  value={form.emailfications} />
-              </View>
-            </View>
-            <View style={[styles.rowWrapper, styles.rowLast]}>
-              <View style={styles.row}>
-                <Text style={styles.rowLabel}>Push fications</Text>
-                <View style={styles.rowSpacer} />
+                  value={preferences.emailNotifications}
+                  onValueChange={handleToggle('emailNotifications')}
+                  trackColor={{ false: '#d7dce3', true: '#0eb37d' }}
+                  thumbColor="#ffffff"
+                />
+              ),
+            })}
+            {renderRow({
+              label: 'Push bildirimleri',
+              rightElement: (
                 <Switch
-                  onValueChange={pushfications =>
-                    setForm({ ...form, pushfications })
-                  }
-                  style={{ transform: [{ scaleX: 0.95 }, { scaleY: 0.95 }] }}
-                  value={form.pushfications} />
-              </View>
-            </View>
+                  value={preferences.pushNotifications}
+                  onValueChange={handleToggle('pushNotifications')}
+                  trackColor={{ false: '#d7dce3', true: '#0eb37d' }}
+                  thumbColor="#ffffff"
+                />
+              ),
+            })}
+            {renderRow({
+              label: 'Karanlık tema',
+              rightElement: (
+                <Switch
+                  value={preferences.darkMode}
+                  onValueChange={handleToggle('darkMode')}
+                  trackColor={{ false: '#d7dce3', true: '#0eb37d' }}
+                  thumbColor="#ffffff"
+                />
+              ),
+              isLast: true,
+            })}
           </View>
         </View>
+
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Resources</Text>
-          <View style={styles.sectionBody}>
-            <View style={[styles.rowWrapper, styles.rowFirst]}>
-              <TouchableOpacity
-                onPress={() => {
-                  // handle onPress
-                }}
-                style={styles.row}>
-                <Text style={styles.rowLabel}>Contact Us</Text>
-                <View style={styles.rowSpacer} />
-                <FeatherIcon
-                  color="#bcbcbc"
-                  name="chevron-right"
-                  size={19} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.rowWrapper}>
-              <TouchableOpacity
-                onPress={() => {
-                  // handle onPress
-                }}
-                style={styles.row}>
-                <Text style={styles.rowLabel}>Report Bug</Text>
-                <View style={styles.rowSpacer} />
-                <FeatherIcon
-                  color="#bcbcbc"
-                  name="chevron-right"
-                  size={19} />
-              </TouchableOpacity>
-            </View>
-            <View style={styles.rowWrapper}>
-              <TouchableOpacity
-                onPress={() => {
-                  // handle onPress
-                }}
-                style={styles.row}>
-                <Text style={styles.rowLabel}>Rate in App Store</Text>
-                <View style={styles.rowSpacer} />
-                <FeatherIcon
-                  color="#bcbcbc"
-                  name="chevron-right"
-                  size={19} />
-              </TouchableOpacity>
-            </View>
-            <View style={[styles.rowWrapper, styles.rowLast]}>
-              <TouchableOpacity
-                onPress={() => {
-                  // handle onPress
-                }}
-                style={styles.row}>
-                <Text style={styles.rowLabel}>Terms and Privacy</Text>
-                <View style={styles.rowSpacer} />
-                <FeatherIcon
-                  color="#bcbcbc"
-                  name="chevron-right"
-                  size={19} />
-              </TouchableOpacity>
-            </View>
+          <Text style={styles.sectionTitle}>Destek ve kaynaklar</Text>
+          <View style={styles.card}>
+            {renderRow({
+              label: 'Bize Ulaş',
+              onPress: () => showComingSoon('Destek'),
+            })}
+            {renderRow({
+              label: 'Hata bildir',
+              onPress: () => showComingSoon('Hata bildirme'),
+            })}
+            {renderRow({
+              label: 'App Store puanı',
+              onPress: () => showComingSoon('Mağaza bağlantısı'),
+            })}
+            {renderRow({
+              label: 'Sözleşmeler ve gizlilik',
+              onPress: () => showComingSoon('Sözleşmeler'),
+              isLast: true,
+            })}
           </View>
         </View>
+
         <View style={styles.section}>
-          <View style={styles.sectionBody}>
-            <View
-              style={[
-                styles.rowWrapper,
-                styles.rowFirst,
-                styles.rowLast,
-                { alignItems: 'center' },
-              ]}>
-              <TouchableOpacity
-                onPress={handleLogOut}
-                style={styles.row}>
-                <Text style={[styles.rowLabel, styles.rowLabelLogout]}>
-                  Log Out
-                </Text>
-              </TouchableOpacity>
-            </View>
+          <View style={[styles.card, styles.logoutCard]}>
+            <TouchableOpacity style={styles.logoutButton} onPress={handleLogOut}>
+              <FeatherIcon name="log-out" size={18} color="#dc2626" />
+              <Text style={styles.logoutText}>Çıkış Yap</Text>
+            </TouchableOpacity>
           </View>
         </View>
-        <Text style={styles.contentFooter}>App Version 2.24 #50491</Text>
+
+        <Text style={styles.versionText}>Patipartner v2.24 • Yapı 50491</Text>
       </ScrollView>
     </SafeAreaView>
-  )
-}
+  );
+};
 
-export default SettingsPage
+export default SettingsPage;
 
 const styles = StyleSheet.create({
-  /** Header */
-  header: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    justifyContent: 'space-between',
-    width: '100%',
-    paddingHorizontal: 16,
-    marginTop:30
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f6f9fc',
   },
-  headerAction: {
-    width: 40,
-    height: 40,
-    alignItems: 'flex-start',
-    justifyContent: 'center',
-  },
-  headerTitle: {
-    fontSize: 19,
-    fontWeight: '600',
-    color: '#000',
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-    textAlign: 'center',
-  },
-  /** Content */
   content: {
-    paddingHorizontal: 16,
+    paddingHorizontal: 20,
+    paddingBottom: 32,
   },
-  contentFooter: {
-    marginTop: 24,
-    fontSize: 13,
-    fontWeight: '500',
-    textAlign: 'center',
-    color: '#a69f9f',
+  profileCard: {
+    marginTop: 12,
+    marginBottom: 24,
+    padding: 24,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    shadowColor: '#041523',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 6,
   },
-  /** Section */
-  section: {
-    paddingVertical: 12,
-  },
-  sectionTitle: {
-    margin: 8,
-    marginLeft: 12,
-    fontSize: 13,
-    letterSpacing: 0.33,
-    fontWeight: '500',
-    color: '#a69f9f',
-    textTransform: 'uppercase',
-  },
-  sectionBody: {
-    borderRadius: 12,
-    shadowColor: '#000',
-    shadowOffset: {
-      width: 0,
-      height: 1,
-    },
-    shadowOpacity: 0.2,
-    shadowRadius: 1.41,
-    elevation: 2,
-  },
-  /** Profile */
-  profile: {
-    padding: 12,
-    backgroundColor: '#fff',
-    borderRadius: 12,
-    flexDirection: 'row',
+  avatarFrame: {
+    width: 72,
+    height: 72,
+    borderRadius: 24,
+    backgroundColor: 'rgba(14, 179, 125, 0.12)',
     alignItems: 'center',
-    justifyContent: 'flex-start',
+    justifyContent: 'center',
+    marginBottom: 16,
   },
   profileAvatar: {
-    width: 60,
-    height: 60,
-    borderRadius: 9999,
-    marginRight: 12,
+    width: '100%',
+    height: '100%',
+    borderRadius: 24,
   },
-  profileBody: {
-    marginRight: 'auto',
+  avatarInitial: {
+    fontSize: 28,
+    fontWeight: '700',
+    color: '#0eb37d',
+  },
+  profileTextContainer: {
+    marginBottom: 16,
   },
   profileName: {
-    fontSize: 18,
-    fontWeight: '600',
-    color: '#292929',
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#041523',
   },
-  profileHandle: {
-    marginTop: 2,
-    fontSize: 16,
-    fontWeight: '400',
-    color: '#858585',
+  profileEmail: {
+    marginTop: 4,
+    fontSize: 15,
+    color: 'rgba(6, 24, 40, 0.6)',
   },
-  /** Row */
-  row: {
-    height: 44,
-    width: '100%',
+  editButton: {
     flexDirection: 'row',
     alignItems: 'center',
-    justifyContent: 'flex-start',
-    paddingRight: 12,
+    alignSelf: 'flex-start',
+    backgroundColor: 'rgba(11, 106, 162, 0.1)',
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    borderRadius: 14,
+  },
+  editButtonText: {
+    marginLeft: 6,
+    fontSize: 13,
+    fontWeight: '600',
+    color: '#0b6aa2',
+  },
+  section: {
+    marginBottom: 24,
+  },
+  sectionTitle: {
+    marginBottom: 12,
+    fontSize: 14,
+    fontWeight: '700',
+    color: 'rgba(6, 24, 40, 0.65)',
+    letterSpacing: 0.6,
+    textTransform: 'uppercase',
+  },
+  card: {
+    borderRadius: 20,
+    backgroundColor: '#ffffff',
+    shadowColor: '#041523',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.06,
+    shadowRadius: 16,
+    elevation: 4,
+    overflow: 'hidden',
   },
   rowWrapper: {
-    paddingLeft: 16,
-    backgroundColor: '#fff',
-    borderTopWidth: 1,
-    borderColor: '#f0f0f0',
-  },
-  rowFirst: {
-    borderTopLeftRadius: 12,
-    borderTopRightRadius: 12,
-  },
-  rowLabel: {
-    fontSize: 16,
-    letterSpacing: 0.24,
-    color: '#000',
-  },
-  rowSpacer: {
-    flexGrow: 1,
-    flexShrink: 1,
-    flexBasis: 0,
-  },
-  rowValue: {
-    fontSize: 16,
-    fontWeight: '500',
-    color: '#ababab',
-    marginRight: 4,
+    width: '100%',
+    paddingHorizontal: 20,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: 'rgba(6, 24, 40, 0.08)',
   },
   rowLast: {
-    borderBottomLeftRadius: 12,
-    borderBottomRightRadius: 12,
+    borderBottomWidth: 0,
   },
-  rowLabelLogout: {
-    width: '100%',
-    textAlign: 'center',
+  rowContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    minHeight: 56,
+  },
+  rowLabel: {
+    fontSize: 15,
     fontWeight: '600',
+    color: '#041523',
+  },
+  rowSpacer: {
+    flex: 1,
+  },
+  rowValue: {
+    marginRight: 8,
+    fontSize: 14,
+    color: 'rgba(6, 24, 40, 0.6)',
+  },
+  logoutCard: {
+    paddingHorizontal: 0,
+  },
+  logoutButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingVertical: 18,
+  },
+  logoutText: {
+    marginLeft: 8,
+    fontSize: 15,
+    fontWeight: '700',
     color: '#dc2626',
+  },
+  versionText: {
+    fontSize: 13,
+    textAlign: 'center',
+    color: 'rgba(6, 24, 40, 0.5)',
   },
 });

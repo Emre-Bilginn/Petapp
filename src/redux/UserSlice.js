@@ -26,12 +26,17 @@ export const login = createAsyncThunk('user/login', async ({ email, password }) 
         userData = userDoc.data(); // Buradan role bilgisini alıyoruz
       }
   
+      const enrichedUser = {
+        ...user,
+        displayName: userData.name || user.displayName || '',
+        email: userData.email || user.email,
+        photoURL: userData.photoURL || user.photoURL || null,
+        role: userData.role || 'user',
+      };
+
       const finalUserData = {
         token,
-        user: {
-          ...user,
-          role: userData.role || "user" // Eğer Firestore'da role yoksa varsayılan user
-        }
+        user: enrichedUser,
       };
   
       await AsyncStorage.setItem("userToken", token);

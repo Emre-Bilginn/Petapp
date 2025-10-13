@@ -1,287 +1,707 @@
-import React, { useEffect, useState } from 'react';
+import { SafeAreaView } from 'react-native-safe-area-context';
+import React, { useCallback, useEffect, useMemo, useState } from 'react';
 import {
-  View, Text, Button, Alert, FlatList, StyleSheet,
-  Modal, TouchableOpacity, Platform
+  ActivityIndicator,
+  Alert,
+  KeyboardAvoidingView,
+  Modal,
+  Platform,
+  ScrollView,
+  StatusBar,
+  StyleSheet,
+  Text,
+  TouchableOpacity,
+  View,
 } from 'react-native';
-import { useRoute } from '@react-navigation/native';
-import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
-import { getAuth, onAuthStateChanged } from "firebase/auth";
-import { db, app } from '../../firebaseConfig';
 import DateTimePicker from '@react-native-community/datetimepicker';
+import { useNavigation, useRoute } from '@react-navigation/native';
+import { getAuth, onAuthStateChanged } from 'firebase/auth';
+import { addDoc, collection, getDocs, query, where } from 'firebase/firestore';
+import { ensureDirectChat } from './ChatService';
+import { db } from '../../firebaseConfig';
+import { CustomButton, CustomTextInput } from '../components/Index';
+
+const TIME_SLOTS = [9, 10, 11, 13, 14, 15, 16, 17].flatMap((hour) => [
+  { hour, minute: 0 },
+  { hour, minute: 20 },
+  { hour, minute: 40 },
+]);
+
+const formatDateLabel = (date) =>
+  date?.toLocaleDateString('tr-TR', {
+    weekday: 'long',
+    day: 'numeric',
+    month: 'long',
+    year: 'numeric',
+  }) ?? '';
+
+const formatTimeLabel = (date) =>
+  date?.toLocaleTimeString('tr-TR', {
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  }) ?? '';
 
 const VetAppointment = () => {
+  const navigation = useNavigation();
   const route = useRoute();
-  const { vet } = route.params;
+  const auth = getAuth();
 
-  const [selectedDate, setSelectedDate] = useState(null);
-  const [showDatePicker, setShowDatePicker] = useState(false);
-  const [appointments, setAppointments] = useState([]);
+  const vet = route.params?.vet ?? null;
+
+  const [selectedDate, setSelectedDate] = useState(() => {
+    const now = new Date();
+    now.setMinutes(0, 0, 0);
+    return now;
+  });
+  const [isDatePickerVisible, setIsDatePickerVisible] = useState(false);
+  const [isTimeModalVisible, setIsTimeModalVisible] = useState(false);
   const [blockedSlots, setBlockedSlots] = useState([]);
-  const [user, setUser] = useState(null);
-  const [modalVisible, setModalVisible] = useState(false);
+  const [userAppointments, setUserAppointments] = useState([]);
+  const [isLoadingSlots, setIsLoadingSlots] = useState(false);
+  const [isBooking, setIsBooking] = useState(false);
+  const [authUser, setAuthUser] = useState(null);
+  const [noteInput, setNoteInput] = useState('');
+  const [errorMessage, setErrorMessage] = useState('');
 
-  const auth = getAuth(app);
+  const vetDisplayName = vet?.name ?? 'Veteriner';
+  const vetSubtitle = vet?.address ?? vet?.vicinity ?? 'Klinik detayları henüz eklenmedi.';
+  const vetKey = useMemo(() => {
+    if (vet?.uid) {
+      return `uid:${vet.uid}`;
+    }
+    if (vet?.name) {
+      return `name:${vet.name.trim().toLowerCase()}`;
+    }
+    return null;
+  }, [vet?.uid, vet?.name]);
+
+  const selectedDayKey = useMemo(() => {
+    if (!selectedDate) {
+      return null;
+    }
+    return selectedDate.toISOString().split('T')[0];
+  }, [selectedDate]);
+
+  const timeKeySet = useMemo(() => new Set(blockedSlots), [blockedSlots]);
+
+  const { upcomingAppointments, pastAppointments } = useMemo(() => {
+    const now = new Date();
+    const past = [];
+    const upcoming = [];
+
+    userAppointments.forEach((item) => {
+      const target = item.date < now ? past : upcoming;
+      target.push(item);
+    });
+
+    past.sort((a, b) => b.date - a.date);
+    upcoming.sort((a, b) => a.date - b.date);
+
+    return { pastAppointments: past, upcomingAppointments: upcoming };
+  }, [userAppointments]);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (currentUser && selectedDate) fetchAppointments(currentUser);
+      setAuthUser(currentUser);
     });
     return unsubscribe;
-  }, []);
+  }, [auth]);
 
-  useEffect(() => {
-    if (selectedDate && user) fetchAppointments(user);
-  }, [selectedDate]);
-
-  const fetchAppointments = async (currentUser) => {
-    if (!selectedDate || !currentUser) return;
-    try {
-      const normalizedVetName = vet.name.trim().toLowerCase();
-      const q = query(
-        collection(db, 'appointments'),
-        where('vetName', '==', normalizedVetName),
-        where('userId', '==', currentUser.uid)
-      );
-      const querySnapshot = await getDocs(q);
-
-      const selectedDay = selectedDate.toISOString().split('T')[0];
-
-      const fetchedAppointments = querySnapshot.docs.map(doc => ({
-        id: doc.id,
-        ...doc.data()
-      }));
-
-      const blocked = fetchedAppointments
-        .filter(app => app.isFull && new Date(app.date).toISOString().startsWith(selectedDay))
-        .map(app => {
-          const d = new Date(app.date);
-          return {
-            hour: d.getHours(),
-            minute: d.getMinutes()
-          };
-        });
-
-      setBlockedSlots(blocked);
-      setAppointments(fetchedAppointments);
-    } catch (err) {
-      console.error('Randevular yüklenemedi:', err);
-    }
-  };
-
-  const bookAppointment = async () => {
-    if (!user) return Alert.alert('Hata', 'Lütfen önce giriş yapın.');
-    if (!selectedDate) return Alert.alert('Hata', 'Lütfen bir tarih ve saat seçin.');
-
-    const hour = selectedDate.getHours();
-    const minute = selectedDate.getMinutes();
-    const isFull = blockedSlots.some(slot => slot.hour === hour && slot.minute === minute);
-
-    if (isFull) {
-      return Alert.alert('Hata', 'Bu saat zaten dolu. Lütfen başka bir saat seçin.');
+  const loadSlotsAndAppointments = useCallback(async () => {
+    if (!vetKey) {
+      setBlockedSlots([]);
+      setUserAppointments([]);
+      return;
     }
 
     try {
-      const roundedDate = new Date(selectedDate);
-      roundedDate.setSeconds(0);
-      roundedDate.setMilliseconds(0);
+      setIsLoadingSlots(true);
+      const snapshot = await getDocs(query(collection(db, 'appointments'), where('vetKey', '==', vetKey)));
 
-      const duplicateCheck = query(
-        collection(db, 'appointments'),
-        where('date', '==', roundedDate.toISOString()),
-        where('isFull', '==', true)
-      );
-      const snapshot = await getDocs(duplicateCheck);
-      if (!snapshot.empty) {
-        return Alert.alert("Hata", "Bu saat zaten alınmış.");
-      }
+      const nextBlocked = [];
+      const nextUserAppointments = [];
 
-      let vetIdToUse = vet.uid;
-      const normalizedVetName = vet.name.trim().toLowerCase();
-
-      if (!vetIdToUse || vetIdToUse === 'noaccount') {
-        const vetQuery = query(
-          collection(db, 'veterinarians'),
-          where('vetName', '==', normalizedVetName)
-        );
-        const vetSnapshot = await getDocs(vetQuery);
-        if (!vetSnapshot.empty) {
-          vetIdToUse = vetSnapshot.docs[0].data().uid;
-        } else {
-          vetIdToUse = 'noaccount';
+      snapshot.forEach((docItem) => {
+        const data = docItem.data();
+        if (data.appointmentKind && data.appointmentKind !== 'vet') {
+          return;
         }
-      }
 
-      // Bildirim token kısmı kaldırıldı ✅
-      await addDoc(collection(db, 'appointments'), {
-        userId: user.uid,
-        vetId: vetIdToUse,
-        vetName: normalizedVetName,
-        date: roundedDate.toISOString(),
-        isFull: false
+        const rawDate = data.date ?? data.appointmentDate ?? null;
+        let dateObj = null;
+        if (rawDate instanceof Date) {
+          dateObj = rawDate;
+        } else if (rawDate && typeof rawDate.toDate === 'function') {
+          dateObj = rawDate.toDate();
+        } else if (typeof rawDate === 'string') {
+          const parsed = new Date(rawDate);
+          if (!Number.isNaN(parsed.getTime())) {
+            dateObj = parsed;
+          }
+        }
+        if (!dateObj) {
+          return;
+        }
+        const dateIso = dateObj.toISOString();
+        const dayKey = dateIso.split('T')[0];
+        const isCancelled = Boolean(data.cancelled);
+
+        const slotKey = `${dateObj.getHours().toString().padStart(2, '0')}:${dateObj
+          .getMinutes()
+          .toString()
+          .padStart(2, '0')}`;
+        if (selectedDayKey && dayKey === selectedDayKey && !isCancelled) {
+          nextBlocked.push(slotKey);
+        }
+
+        if (authUser && data.userId === authUser.uid) {
+          nextUserAppointments.push({
+            id: docItem.id,
+            date: dateObj,
+            note: data.note ?? '',
+            cancelled: isCancelled,
+          });
+        }
       });
 
-      Alert.alert('Başarılı', 'Randevunuz başarıyla alındı.');
-      fetchAppointments(user);
-    } catch (err) {
-      console.error('Randevu alma hatası:', err);
-      Alert.alert('Hata', 'Randevu alınamadı.');
+      setBlockedSlots([...new Set(nextBlocked)]);
+      setUserAppointments(nextUserAppointments);
+      setErrorMessage('');
+    } catch (error) {
+      console.error('Randevu bilgileri yüklenemedi:', error);
+      setErrorMessage('Randevu bilgileri yüklenirken bir sorun oluştu. Biraz sonra tekrar dene.');
+    } finally {
+      setIsLoadingSlots(false);
+    }
+  }, [authUser, selectedDayKey, vetKey]);
+
+  useEffect(() => {
+    if (!vetKey) {
+      return;
+    }
+    loadSlotsAndAppointments();
+  }, [loadSlotsAndAppointments, vetKey]);
+
+  const handleDateChange = (event, pickedDate) => {
+    if (Platform.OS !== 'ios') {
+      setIsDatePickerVisible(false);
+    }
+
+    if (!pickedDate) {
+      return;
+    }
+
+    const updated = new Date(pickedDate);
+    updated.setHours(selectedDate?.getHours() ?? 9, selectedDate?.getMinutes() ?? 0, 0, 0);
+    setSelectedDate(updated);
+  };
+
+  const handleSelectSlot = (slot) => {
+    const updated = new Date(selectedDate ?? Date.now());
+    updated.setHours(slot.hour, slot.minute, 0, 0);
+    setSelectedDate(updated);
+    setIsTimeModalVisible(false);
+  };
+
+  const handleBookAppointment = async () => {
+    if (!authUser) {
+      Alert.alert('Giriş gerekli', 'Randevu oluşturmak için önce giriş yapmalısın.');
+      return;
+    }
+
+    if (!vetKey || !vetDisplayName) {
+      Alert.alert('Hata', 'Veteriner bilgisi bulunamadı.');
+      return;
+    }
+
+    if (!selectedDate) {
+      Alert.alert('Hata', 'Lütfen tarih ve saat seç.');
+      return;
+    }
+
+    const slotKey = `${selectedDate.getHours().toString().padStart(2, '0')}:${selectedDate
+      .getMinutes()
+      .toString()
+      .padStart(2, '0')}`;
+    if (timeKeySet.has(slotKey)) {
+      Alert.alert('Saat dolu', 'Bu saat başka bir kişi tarafından alınmış. Başka bir saat seç.');
+      return;
+    }
+
+    try {
+      setIsBooking(true);
+      const appointmentISO = selectedDate.toISOString();
+      const normalizedVetName = vet?.name ? vet.name.trim().toLowerCase() : null;
+      const clinicAddress = vet?.address ?? vet?.vicinity ?? null;
+      const vetIdToUse = vet?.uid ?? 'noaccount';
+
+      await addDoc(collection(db, 'appointments'), {
+        appointmentKind: 'vet',
+        userId: authUser.uid,
+        vetId: vetIdToUse,
+        vetKey,
+        vetName: normalizedVetName,
+        clinicId: vetIdToUse,
+        clinicName: vetDisplayName,
+        clinicAddress,
+        date: appointmentISO,
+        note: noteInput.trim() ? noteInput.trim() : null,
+        isFull: true,
+        createdAt: new Date().toISOString(),
+      });
+
+      if (vetIdToUse !== 'noaccount') {
+        await ensureDirectChat({
+          currentUserId: authUser.uid,
+          targetUserId: vetIdToUse,
+          currentUserFallbackName: authUser.displayName || authUser.email || 'Siz',
+          targetUserFallbackName: vetDisplayName || 'Veteriner',
+        });
+      }
+
+      Alert.alert('Başarılı', 'Randevunuz oluşturuldu. Görüşmek üzere!');
+      setNoteInput('');
+      await loadSlotsAndAppointments();
+    } catch (error) {
+      console.error('Randevu oluşturulamadı:', error);
+      Alert.alert('Hata', 'Randevu kaydedilirken bir sorun çıktı. Tekrar dene.');
+    } finally {
+      setIsBooking(false);
     }
   };
 
-  const availableHours = [9, 10, 11, 13, 14, 15, 16, 17];
-
-  const CustomTimePicker = ({ onTimeSelect }) => {
-    const timeSlots = [];
-    availableHours.forEach(h => [0, 20, 40].forEach(m => timeSlots.push({ hour: h, minute: m })));
-
+  if (!vet) {
     return (
-      <View>
-        <Button title="Saat Seç" onPress={() => setModalVisible(true)} />
-        <Modal visible={modalVisible} animationType="slide" transparent>
-          <View style={styles.modalContainer}>
-            <View style={styles.modalContent}>
-              <Text style={styles.modalTitle}>Saat Seçin</Text>
-              <FlatList
-                data={timeSlots}
-                numColumns={3}
-                keyExtractor={item => `${item.hour}:${item.minute}`}
-                renderItem={({ item }) => {
-                  const isFull = blockedSlots.some(slot => slot.hour === item.hour && slot.minute === item.minute);
-                  const isSelected = selectedDate &&
-                    selectedDate.getHours() === item.hour &&
-                    selectedDate.getMinutes() === item.minute;
-
-                  return (
-                    <TouchableOpacity
-                      disabled={isFull}
-                      onPress={() => {
-                        const updated = new Date(selectedDate || new Date());
-                        updated.setHours(item.hour, item.minute);
-                        updated.setSeconds(0);
-                        updated.setMilliseconds(0);
-                        setSelectedDate(updated);
-                        onTimeSelect(updated);
-                        setModalVisible(false);
-                      }}
-                      style={[
-                        styles.timeSlot,
-                        isFull ? { backgroundColor: '#ccc' }
-                          : isSelected ? { backgroundColor: '#a4c5eb' }
-                          : { backgroundColor: '#f0f0f0' }
-                      ]}
-                    >
-                      <Text style={styles.timeText}>
-                        {item.hour.toString().padStart(2, '0')}:{item.minute.toString().padStart(2, '0')}
-                        {isFull ? ' (Dolu)' : ''}
-                      </Text>
-                    </TouchableOpacity>
-                  );
-                }}
-              />
-              <Button title="İptal" onPress={() => setModalVisible(false)} />
-            </View>
-          </View>
-        </Modal>
-      </View>
+      <SafeAreaView style={styles.safeAreaCentered}>
+        <StatusBar barStyle="dark-content" backgroundColor="#f6f9fc" />
+        <Text style={styles.centeredTitle}>Veteriner bilgisi bulunamadı</Text>
+        <Text style={styles.centeredSubtitle}>Listeye geri dönerek farklı bir klinik seçebilirsin.</Text>
+        <CustomButton
+          buttonText="Geri dön"
+          setWidth="70%"
+          handleOnPress={() => navigation.goBack()}
+          buttonColor="#0b6aa2"
+          pressedButtonColor="#084d73"
+        />
+      </SafeAreaView>
     );
-  };
-
-  const formatDateTime = (date) =>
-    new Date(date).toLocaleString('tr-TR', {
-      year: 'numeric', month: 'long', day: 'numeric',
-      hour: '2-digit', minute: '2-digit', hour12: false
-    });
-
-  const pastAppointments = appointments.filter(a => new Date(a.date) < new Date());
-  const upcomingAppointments = appointments.filter(a => new Date(a.date) >= new Date());
+  }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>{vet.name}</Text>
+    <SafeAreaView style={styles.safeArea}>
+      <StatusBar barStyle="dark-content" backgroundColor="#f6f9fc" />
+      <KeyboardAvoidingView
+        style={styles.flex}
+        behavior={Platform.OS === 'ios' ? 'padding' : undefined}
+      >
+        <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+          <View style={styles.heroCard}>
+            <Text style={styles.heroTitle}>{vetDisplayName}</Text>
+            <Text style={styles.heroSubtitle}>{vetSubtitle}</Text>
+          </View>
 
-      <View style={styles.dateTimePickerContainer}>
-        <Button title="Tarih Seç" onPress={() => setShowDatePicker(true)} />
-        {showDatePicker && (
-          <DateTimePicker
-            value={selectedDate || new Date()}
-            mode="date"
-            display={Platform.OS === 'ios' ? 'inline' : 'default'}
-            onChange={(event, date) => {
-              setShowDatePicker(false);
-              if (date) {
-                const updated = new Date(date);
-                if (selectedDate) {
-                  updated.setHours(selectedDate.getHours() || 9);
-                  updated.setMinutes(selectedDate.getMinutes() || 0);
-                }
-                setSelectedDate(updated);
-              }
-            }}
-          />
-        )}
-      </View>
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>1. Tarih Seç</Text>
+            <CustomButton
+              buttonText={formatDateLabel(selectedDate) || 'Tarih Seç'}
+              setWidth="100%"
+              handleOnPress={() => setIsDatePickerVisible(true)}
+              buttonColor="#0b6aa2"
+              pressedButtonColor="#084d73"
+            />
+            {isDatePickerVisible ? (
+              <DateTimePicker
+                value={selectedDate || new Date()}
+                mode="date"
+                display={Platform.OS === 'ios' ? 'inline' : 'default'}
+                onChange={handleDateChange}
+                minimumDate={new Date()}
+              />
+            ) : null}
+          </View>
 
-      <CustomTimePicker onTimeSelect={setSelectedDate} />
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>2. Saat Seç</Text>
+            <CustomButton
+              buttonText={formatTimeLabel(selectedDate) || 'Saat Seç'}
+              setWidth="100%"
+              handleOnPress={() => setIsTimeModalVisible(true)}
+              buttonColor="#0eb37d"
+              pressedButtonColor="#0a8c61"
+            />
+            {isLoadingSlots ? (
+              <ActivityIndicator size="small" color="#0b6aa2" style={styles.loader} />
+            ) : null}
+          </View>
 
-      <Text style={styles.selectedDate}>
-        {selectedDate ? `Seçilen: ${formatDateTime(selectedDate)}` : 'Henüz bir tarih seçilmedi'}
-      </Text>
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>3. Not Ekle (Opsiyonel)</Text>
+            <CustomTextInput
+              title="Not"
+              isSecureText={false}
+              handleOnChangeText={setNoteInput}
+              handleValue={noteInput}
+              handlePlaceHolder="Örn. Muayene sebebi"
+              helperText="Veteriner ile paylaşmak istediğin kısa bir not ekleyebilirsin."
+              containerStyle={styles.noteInput}
+            />
+          </View>
 
-      <Button title="Randevu Al" onPress={bookAppointment} />
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Özet</Text>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Tarih</Text>
+              <Text style={styles.summaryValue}>{formatDateLabel(selectedDate) || '-'}</Text>
+            </View>
+            <View style={styles.summaryRow}>
+              <Text style={styles.summaryLabel}>Saat</Text>
+              <Text style={styles.summaryValue}>{formatTimeLabel(selectedDate) || '-'}</Text>
+            </View>
+            {noteInput.trim() ? (
+              <View style={styles.summaryNote}>
+                <Text style={styles.summaryNoteLabel}>Notun</Text>
+                <Text style={styles.summaryNoteValue}>{noteInput.trim()}</Text>
+              </View>
+            ) : null}
+            {errorMessage ? <Text style={styles.errorText}>{errorMessage}</Text> : null}
+            <CustomButton
+              buttonText={isBooking ? 'Randevu Oluşturuluyor...' : 'Randevuyu Onayla'}
+              setWidth="100%"
+              handleOnPress={handleBookAppointment}
+              buttonColor="#2fbf71"
+              pressedButtonColor="#249760"
+              isDisabled={isBooking}
+            />
+          </View>
 
-      <Text style={styles.subtitle}>Geçmiş Randevular</Text>
-      <FlatList
-        data={pastAppointments}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <View style={[styles.appointmentItem, item.cancelled ? { backgroundColor: '#f0f0f0' } : {}]}>
-            <Text style={[styles.appointmentText, item.cancelled ? { color: '#999', textDecorationLine: 'line-through' } : {}]}>
-              {formatDateTime(item.date)}
-            </Text>
-            {item.cancelled && (
-              <Text style={{ color: '#dc2626', marginTop: 4 }}>
-                Bu randevu veteriner tarafından iptal edilmiştir.
-              </Text>
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Yaklaşan Randevuların</Text>
+            {upcomingAppointments.length ? (
+              upcomingAppointments.map((item) => (
+                <View key={item.id} style={styles.appointmentRow}>
+                  <Text style={styles.appointmentDate}>
+                    {item.date.toLocaleString('tr-TR', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                  {item.note ? <Text style={styles.appointmentNote}>{item.note}</Text> : null}
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>Bu klinikte planlanmış randevun yok.</Text>
             )}
           </View>
-        )}
-      />
 
-      <Text style={styles.subtitle}>Gelecek Randevular</Text>
-      <FlatList
-        data={upcomingAppointments}
-        keyExtractor={item => item.id}
-        renderItem={({ item }) => (
-          <View style={[styles.appointmentItem, item.cancelled ? { backgroundColor: '#f0f0f0' } : {}]}>
-            <Text style={[styles.appointmentText, item.cancelled ? { color: '#999', textDecorationLine: 'line-through' } : {}]}>
-              {formatDateTime(item.date)}
-            </Text>
-            {item.cancelled && (
-              <Text style={{ color: '#dc2626', marginTop: 4 }}>
-                Bu randevu veteriner tarafından iptal edilmiştir.
-              </Text>
+          <View style={styles.card}>
+            <Text style={styles.sectionTitle}>Geçmiş Randevuların</Text>
+            {pastAppointments.length ? (
+              pastAppointments.map((item) => (
+                <View key={item.id} style={styles.appointmentRowPast}>
+                  <Text style={styles.appointmentDatePast}>
+                    {item.date.toLocaleString('tr-TR', {
+                      day: 'numeric',
+                      month: 'long',
+                      year: 'numeric',
+                      hour: '2-digit',
+                      minute: '2-digit',
+                    })}
+                  </Text>
+                  {item.note ? <Text style={styles.appointmentNotePast}>{item.note}</Text> : null}
+                </View>
+              ))
+            ) : (
+              <Text style={styles.emptyText}>Henüz geçmiş randevun yok.</Text>
             )}
           </View>
-        )}
-      />
-    </View>
+        </ScrollView>
+      </KeyboardAvoidingView>
+
+      <Modal
+        visible={isTimeModalVisible}
+        transparent
+        animationType="fade"
+        onRequestClose={() => setIsTimeModalVisible(false)}
+      >
+        <View style={styles.modalBackdrop}>
+          <View style={styles.modalCard}>
+            <Text style={styles.modalTitle}>Saat Seç</Text>
+            <Text style={styles.modalSubtitle}>Müsait saatler dolu olanlarla birlikte listelenir.</Text>
+            <View style={styles.timeGrid}>
+              {TIME_SLOTS.map((slot) => {
+                const slotLabel = `${slot.hour.toString().padStart(2, '0')}:${slot.minute
+                  .toString()
+                  .padStart(2, '0')}`;
+                const isBlocked = timeKeySet.has(slotLabel);
+                const isSelected =
+                  selectedDate &&
+                  selectedDate.getHours() === slot.hour &&
+                  selectedDate.getMinutes() === slot.minute;
+
+                return (
+                  <TouchableOpacity
+                    key={slotLabel}
+                    style={[
+                      styles.timeSlot,
+                      isBlocked && styles.timeSlotBlocked,
+                      isSelected && styles.timeSlotSelected,
+                    ]}
+                    disabled={isBlocked}
+                    onPress={() => handleSelectSlot(slot)}
+                    activeOpacity={0.85}
+                  >
+                    <Text
+                      style={[
+                        styles.timeSlotText,
+                        isSelected && styles.timeSlotTextSelected,
+                        isBlocked && styles.timeSlotTextBlocked,
+                      ]}
+                    >
+                      {slotLabel}
+                    </Text>
+                    {isBlocked ? <Text style={styles.timeSlotBadge}>Dolu</Text> : null}
+                  </TouchableOpacity>
+                );
+              })}
+            </View>
+            <CustomButton
+              buttonText="Kapat"
+              setWidth="100%"
+              handleOnPress={() => setIsTimeModalVisible(false)}
+              buttonColor="#cbd5e1"
+              pressedButtonColor="#94a3b8"
+            />
+          </View>
+        </View>
+      </Modal>
+    </SafeAreaView>
   );
 };
 
-const styles = StyleSheet.create({
-  container: { flex: 1, padding: 20, backgroundColor: '#f9f9f9' },
-  title: { fontSize: 24, fontWeight: 'bold', textAlign: 'center', marginBottom: 20 },
-  subtitle: { fontSize: 20, fontWeight: 'bold', marginVertical: 10 },
-  selectedDate: { fontSize: 16, textAlign: 'center', marginVertical: 10 },
-  appointmentItem: { backgroundColor: '#fff', padding: 15, borderRadius: 8, marginBottom: 10 },
-  appointmentText: { fontSize: 16 },
-  dateTimePickerContainer: { marginBottom: 10 },
-  modalContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: 'rgba(0,0,0,0.5)' },
-  modalContent: { backgroundColor: 'white', padding: 20, borderRadius: 10, width: '90%' },
-  modalTitle: { fontSize: 18, fontWeight: 'bold', marginBottom: 15 },
-  timeSlot: { padding: 10, margin: 5, borderRadius: 5, width: 80, alignItems: 'center' },
-  timeText: { fontSize: 16 },
-});
-
 export default VetAppointment;
+
+const styles = StyleSheet.create({
+  flex: {
+    flex: 1,
+  },
+  safeArea: {
+    flex: 1,
+    backgroundColor: '#f6f9fc',
+  },
+  safeAreaCentered: {
+    flex: 1,
+    backgroundColor: '#f6f9fc',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  centeredTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+    color: '#041523',
+    marginBottom: 8,
+  },
+  centeredSubtitle: {
+    fontSize: 14,
+    color: 'rgba(6, 24, 40, 0.7)',
+    textAlign: 'center',
+    marginBottom: 18,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingBottom: 32,
+  },
+  heroCard: {
+    marginTop: 16,
+    paddingHorizontal: 20,
+    paddingVertical: 22,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    shadowColor: '#041523',
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.08,
+    shadowRadius: 20,
+    elevation: 6,
+  },
+  heroTitle: {
+    fontSize: 24,
+    fontWeight: '700',
+    color: '#041523',
+  },
+  heroSubtitle: {
+    marginTop: 6,
+    fontSize: 14,
+    color: 'rgba(6, 24, 40, 0.65)',
+    lineHeight: 20,
+  },
+  card: {
+    marginTop: 20,
+    paddingHorizontal: 20,
+    paddingVertical: 24,
+    borderRadius: 24,
+    backgroundColor: '#ffffff',
+    shadowColor: '#041523',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.08,
+    shadowRadius: 18,
+    elevation: 6,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: '700',
+    color: '#041523',
+  },
+  loader: {
+    marginTop: 12,
+  },
+  noteInput: {
+    marginTop: 16,
+  },
+  summaryRow: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginTop: 16,
+  },
+  summaryLabel: {
+    fontSize: 13,
+    color: 'rgba(6, 24, 40, 0.65)',
+  },
+  summaryValue: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: '#0b6aa2',
+  },
+  summaryNote: {
+    marginTop: 16,
+    borderRadius: 16,
+    backgroundColor: 'rgba(11, 106, 162, 0.08)',
+    padding: 12,
+  },
+  summaryNoteLabel: {
+    fontSize: 13,
+    color: 'rgba(6, 24, 40, 0.65)',
+  },
+  summaryNoteValue: {
+    marginTop: 4,
+    fontSize: 14,
+    color: '#041523',
+  },
+  errorText: {
+    marginTop: 16,
+    fontSize: 12,
+    color: '#e53935',
+  },
+  appointmentRow: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(6, 24, 40, 0.08)',
+  },
+  appointmentRowPast: {
+    paddingVertical: 12,
+    borderBottomWidth: 1,
+    borderBottomColor: 'rgba(6, 24, 40, 0.08)',
+    opacity: 0.85,
+  },
+  appointmentDate: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#0b6aa2',
+  },
+  appointmentDatePast: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#041523',
+  },
+  appointmentNote: {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(6, 24, 40, 0.65)',
+  },
+  appointmentNotePast: {
+    marginTop: 4,
+    fontSize: 12,
+    color: 'rgba(6, 24, 40, 0.55)',
+  },
+  emptyText: {
+    marginTop: 12,
+    fontSize: 13,
+    color: 'rgba(6, 24, 40, 0.65)',
+  },
+  modalBackdrop: {
+    flex: 1,
+    backgroundColor: 'rgba(4, 21, 35, 0.45)',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 20,
+  },
+  modalCard: {
+    width: '100%',
+    maxWidth: 420,
+    borderRadius: 24,
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 28,
+    backgroundColor: '#ffffff',
+    shadowColor: '#041523',
+    shadowOffset: { width: 0, height: 12 },
+    shadowOpacity: 0.12,
+    shadowRadius: 24,
+    elevation: 10,
+  },
+  modalTitle: {
+    fontSize: 20,
+    fontWeight: '700',
+    color: '#041523',
+  },
+  modalSubtitle: {
+    marginTop: 6,
+    fontSize: 13,
+    color: 'rgba(6, 24, 40, 0.65)',
+  },
+  timeGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 16,
+    marginBottom: 20,
+    gap: 10,
+  },
+  timeSlot: {
+    width: '29%',
+    borderRadius: 14,
+    paddingVertical: 12,
+    backgroundColor: 'rgba(6, 24, 40, 0.06)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  timeSlotSelected: {
+    backgroundColor: 'rgba(14, 179, 125, 0.18)',
+    borderWidth: 1,
+    borderColor: '#0eb37d',
+  },
+  timeSlotBlocked: {
+    backgroundColor: 'rgba(6, 24, 40, 0.08)',
+    borderColor: 'rgba(6, 24, 40, 0.2)',
+  },
+  timeSlotText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: 'rgba(6, 24, 40, 0.7)',
+  },
+  timeSlotTextSelected: {
+    color: '#0a8c61',
+  },
+  timeSlotTextBlocked: {
+    color: 'rgba(6, 24, 40, 0.4)',
+  },
+  timeSlotBadge: {
+    marginTop: 4,
+    fontSize: 11,
+    fontWeight: '600',
+    color: '#e53935',
+  },
+});
